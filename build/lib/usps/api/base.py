@@ -52,7 +52,7 @@ class USPSService(object):
         @return: a dictionary representing the XML response from USPS
         """
         items = list()
-        for item in xml.getchildren():#xml.findall(self.SERVICE_NAME+'Response'):
+        for item in xml:#xml.findall(self.SERVICE_NAME+'Response'):
             items.append(xmltodict(item))
         return items
     
