@@ -8,9 +8,10 @@ try:
 except ImportError:
     from elementtree import ElementTree as ET
 
+
 class TrackConfirm(USPSService):
     """
-    Calculator for domestic shipping rates
+    Basic Tracking Confirmation returns basic summary of events
     """
     SERVICE_NAME = 'Track'
     CHILD_XML_NAME = 'TrackID'
@@ -28,7 +29,14 @@ class TrackConfirm(USPSService):
                 data_xml = ET.Element('TrackID')
                 data_xml.attrib['ID'] = str(track_id)
                 root.append(data_xml) 
-                 
+
         return root
     
-    
+
+
+class TrackConfirmWithFields(TrackConfirm):
+    """
+    Tracking Confirmation with Field details
+    refer to: https://www.usps.com/business/web-tools-apis/track-and-confirm-v1-3a.htm#_Toc275424093
+    """
+    SERVICE_NAME = 'TrackField'
