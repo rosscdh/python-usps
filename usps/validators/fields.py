@@ -7,6 +7,12 @@ from django.forms import CharField, ValidationError
 
 from math import ceil
 
+class InvalidTrackingNumber(ValidationError):
+    message = 'The Tracking Code entered is not valid'
+
+    def __init__(self):
+        super(InvalidTrackingNumber, self).__init__(self.message)
+
 
 class USPSTrackingCodeField(CharField):
     tracking_code = None
@@ -90,7 +96,10 @@ class USPSTrackingCodeField(CharField):
         num_weights = len(weights)
 
         for i in range_list:
-            range_sum += (weights[i % num_weights] * int(current_value.__str__()[i]))
+            try:
+                range_sum += (weights[i % num_weights] * int(current_value.__str__()[i]))
+            except:
+                raise InvalidTrackingNumber
 
         return range_sum
 
@@ -105,5 +114,5 @@ class USPSTrackingCodeField(CharField):
             # and not one of those
             if self.is_USS128(tracking_code=value) is False:
                 # then its not a USPS tracking code I'm afraid
-                raise ValidationError('The Tracking Code entered is not valid')
+                raise InvalidTrackingNumber
         return value
