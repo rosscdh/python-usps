@@ -67,7 +67,8 @@ class USPSTrackingCodeField(CharField):
     #
     def is_USS39(self, tracking_code):
         value = tracking_code[:] # duplicate the val as we make changes to it
-        if self.tracking_code_len not in [13] or type(value[0:2]) is not str or type(value[-2:]) is not str:
+        #import pdb;pdb.set_trace()
+        if self.tracking_code_len not in [13] or type(value[0:2]) not in [unicode, str] or type(value[-2:]) not in [unicode, str]:
             return False
 
         value = value[2:-2]  # drop the first 2 and last 2 str elements "EJ" and "US"
