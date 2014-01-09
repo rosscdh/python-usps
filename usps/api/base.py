@@ -11,6 +11,9 @@ try:
 except ImportError:
     from elementtree import ElementTree as ET
 
+import logging
+logger = logging.getLogger('django.request')
+
 class USPSService(object):
     """
     Base USPS Service Wrapper implementation
@@ -36,12 +39,14 @@ class USPSService(object):
         """
         data = {'XML':ET.tostring(xml),
                 'API':self.API}
+
         response = urllib2.urlopen(self.url, utf8urlencode(data))
+
         root = ET.parse(response).getroot()
         if root.tag == 'Error':
             raise USPSXMLError(root)
         error = root.find('.//Error')
-        if error:
+        if error is not None:
             raise USPSXMLError(error)
         return root
     
@@ -90,4 +95,7 @@ class USPSService(object):
             password = self.password
             
         xml = self.make_xml(data, user_id, password)
-        return self.parse_xml(self.submit_xml(xml))
+        logger.debug(ET.tostring(xml, encoding='utf8', method='xml'))
+        response = self.submit_xml(xml)
+        logger.debug(ET.tostring(response, encoding='utf8', method='xml'))
+        return self.parse_xml(response)
