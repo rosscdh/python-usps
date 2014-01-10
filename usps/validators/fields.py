@@ -1,7 +1,10 @@
 # -*- coding: utf-8 -*-
 """
-Validator heplers that can be used with django
-Credit: https://code.google.com/p/php-parcel-tracker/source/browse/carriers/usps.class.php?r=ecd3a1e9dfed7a2555b39178bf6bfd197040933e
+USPS Tracking Code Field Validator that can be used with django
+
+Used to be based on: https://code.google.com/p/php-parcel-tracker/source/browse/carriers/usps.class.php?r=ecd3a1e9dfed7a2555b39178bf6bfd197040933e
+But that was broken so based it on: https://github.com/franckverrot/activevalidators/blob/master/lib/active_model/validations/tracking_number_validator.rb
+Thanks to the original contributors
 """
 from django.forms import CharField, ValidationError
 
@@ -19,7 +22,6 @@ class InvalidTrackingNumber(ValidationError):
 
 class USPSTrackingCodeField(CharField):
     original = None
-    tracking_code = None
 
     USS128_REGEX = r'^(\d{19,21})(\d)$'
     USS39_REGEX = r'^[a-zA-Z0-9]{2}(\d{8})(\d)US$'
@@ -84,7 +86,10 @@ class USPSTrackingCodeField(CharField):
         else:
             return 11 - mod
 
-
+    #
+    # Extract matches from string based on provided
+    # regex
+    #
     def get_matches(self, regex, value):
         matches = re.match(regex, value)
         if matches is None:
@@ -95,16 +100,26 @@ class USPSTrackingCodeField(CharField):
         except:
             raise InvalidTrackingNumber(self.original)
 
+    #
+    # Calculate the weighted sum based on the ruby validators
+    #
     def weighted_sum(self, value, weights):
         """
         takes a string containing digits and calculates a checksum using the
         provided weight array
         """
         # digits = value.split('').map { |d| d.to_i }
-        digits = map(int,str(value))
+        digits = map(int, str(value))
         num_digits = len(digits)
 
-        # cycles the weight array if it's not long enough
+        # cycles the weight list if it's not long enough
+        # get 2 lists of equal length
+        # >>> digits
+        # [2, 3, 7, 4, 4, 9, 1, 1, 0, 0, 0, 0, 3, 6, 2, 3, 1, 0, 7]
+        # >>> weights
+        # [3, 1, 3, 1, 3, 1, 3, 1, 3, 1, 3, 1, 3, 1, 3, 1, 3, 1, 3]
+        # zip them up and return a new list of the digit multiplied by the weight
+        #
         if len(weights) < num_digits:
             for w in cycle(weights):
                 if len(weights) < num_digits:
@@ -116,15 +131,12 @@ class USPSTrackingCodeField(CharField):
 
     def clean(self, value):
         self.original = value
-        value = ''.join(value.split())  # ensure no whitespace
-        self.tracking_code = value  # store it for use in range_sum
-        self.tracking_code_len = len(value)  # get the length of the string
-        self.tracking_code_is_numeric = value.isdigit()  # evalute is alpha-numericy
+        tracking_code = ''.join(value.split())  # ensure no whitespace
 
         # if its not one of these
-        if self.is_USS39(tracking_code=value) is False:
+        if self.is_USS39(tracking_code=tracking_code) is False:
             # and not one of those
-            if self.is_USS128(tracking_code=value) is False:
+            if self.is_USS128(tracking_code=tracking_code) is False:
                 # then its not a USPS tracking code I'm afraid
                 raise InvalidTrackingNumber(self.original)
         return value
