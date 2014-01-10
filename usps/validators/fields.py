@@ -5,17 +5,25 @@ Credit: https://code.google.com/p/php-parcel-tracker/source/browse/carriers/usps
 """
 from django.forms import CharField, ValidationError
 
-from math import ceil
+from itertools import cycle
+import re
+
 
 class InvalidTrackingNumber(ValidationError):
-    message = 'The Tracking Code entered is not valid'
+    message = 'The Tracking Code "{value}" is not valid'
 
-    def __init__(self):
+    def __init__(self, value):
+        self.message = self.message.format(value=value)
         super(InvalidTrackingNumber, self).__init__(self.message)
 
 
 class USPSTrackingCodeField(CharField):
+    original = None
     tracking_code = None
+
+    USS128_REGEX = r'^(\d{19,21})(\d)$'
+    USS39_REGEX = r'^[a-zA-Z0-9]{2}(\d{8})(\d)US$'
+
     #
     # Validate a USPS tracking number based on USS Code 128 Subset C 20-digit barcode PIC (human
     # readable portion).
@@ -26,35 +34,16 @@ class USPSTrackingCodeField(CharField):
     # @return boolean True if the passed number is a USS 128 shipment.
     #
     def is_USS128(self, tracking_code):
-        # ensure its the correct length
-        # and that the tracking_code IS numeric, ie its not uss128 if the code is not numeric
-        if self.tracking_code_len not in [20, 22, 30] or self.tracking_code_is_numeric is False:
+        matches = self.get_matches(self.USS128_REGEX, tracking_code)
+        if matches is None:
             return False
 
-        value = str(tracking_code[:]) # duplicate the val as we make changes to it and ensure is an integer
+        current_value = matches[0]
+        end_value = int(matches[1])
 
-        if self.tracking_code_len == 20:
-            # Add service code to shortened number. This passes known test cases but need
-            # to verify that this is always a correct assumption.
-            value = '91%s' % value
+        checksum = self.usps_mod10(current_value[::-1])  # reverse the string in this case
 
-        elif self.tracking_code_len == 30:
-            # Truncate extra information
-            value = value[8:30]
-
-        # cast it as an int
-        value = int(value)
-
-        range_list = range(0, 21) # need a list of 0..20 (thus 21 for pythons range)
-        range_list.reverse()  # reverse the list as we need it from highest to lowest
-
-        reversed_value = value.__str__()[::-1] # reverse the value as per https://github.com/franckverrot/activevalidators/blob/master/lib/active_model/validations/tracking_number_validator.rb
-
-        range_sum = self.range_sum(current_value=reversed_value, range_list=range_list, weights=[3, 1])
-
-        checksum = (ceil(range_sum / 10) * 10) - range_sum
-
-        return int(abs(checksum)) == int(value.__str__()[21])
+        return checksum == end_value
 
     #
     # Validate a USPS tracking number based on a USS Code 39 Barcode, this uses the MOD 11
@@ -66,45 +55,67 @@ class USPSTrackingCodeField(CharField):
     # @return boolean True if the passed number is a USS 39 tracking number.
     #
     def is_USS39(self, tracking_code):
-        value = tracking_code[:] # duplicate the val as we make changes to it
-        #import pdb;pdb.set_trace()
-        if self.tracking_code_len not in [13] or type(value[0:2]) not in [unicode, str] or type(value[-2:]) not in [unicode, str]:
+        matches = self.get_matches(self.USS39_REGEX, tracking_code)
+
+        if matches is None:
             return False
 
-        value = value[2:-2]  # drop the first 2 and last 2 str elements "EJ" and "US"
+        current_value = matches[0]
+        end_value = int(matches[1])
 
-        range_sum = self.range_sum(current_value=value, range_list=range(0, 8), weights=[8, 6, 4, 2, 3, 5, 9, 7])
+        return (end_value == self.usps_mod10(chars=current_value) or end_value == self.usps_mod11(chars=current_value))
 
-        # get a check_digit to calculate teh checksum against
-        check_digit = range_sum % 11
+    #
+    # Calculate using the mod10 algorythm
+    #
+    def usps_mod10(self, chars):
+        range_sum = self.weighted_sum(value=chars, weights=[3, 1])
+        return (10 - range_sum % 10) % 10
 
-        if check_digit == 0:
-            checksum = 5
-        elif check_digit == 1:
-            checksum = 0
+    #
+    # Calculate using the mod11 algorythm
+    #
+    def usps_mod11(self, chars):
+        mod = self.weighted_sum(value=chars, weights=[8, 6, 4, 2, 3, 5, 9, 7]) % 11
+        if mod == 0:
+            return 5
+        elif mod == 1:
+            return 0
         else:
-            checksum = 11 - check_digit
+            return 11 - mod
 
-        return checksum == int(value[8])
 
-    def range_sum(self, current_value, range_list, weights):
+    def get_matches(self, regex, value):
+        matches = re.match(regex, value)
+        if matches is None:
+            return None  # return None if there are no matches
+        try:
+            return matches.groups()
+            # raise exception if this is busted
+        except:
+            raise InvalidTrackingNumber(self.original)
+
+    def weighted_sum(self, value, weights):
         """
-        calculate a range_sum which is used to calcukate checksum
-        done by passing in a list to loop over and then calculate weights
-        against.
+        takes a string containing digits and calculates a checksum using the
+        provided weight array
         """
-        range_sum = 0
-        num_weights = len(weights)
+        # digits = value.split('').map { |d| d.to_i }
+        digits = map(int,str(value))
+        num_digits = len(digits)
 
-        for i in range_list:
-            try:
-                range_sum += (weights[i % num_weights] * int(current_value.__str__()[i]))
-            except:
-                raise InvalidTrackingNumber
+        # cycles the weight array if it's not long enough
+        if len(weights) < num_digits:
+            for w in cycle(weights):
+                if len(weights) < num_digits:
+                    weights.append(w)
+                else:
+                    break
 
-        return range_sum
+        return sum([digit * weight for digit, weight in zip(digits, weights)])
 
     def clean(self, value):
+        self.original = value
         value = ''.join(value.split())  # ensure no whitespace
         self.tracking_code = value  # store it for use in range_sum
         self.tracking_code_len = len(value)  # get the length of the string
@@ -115,5 +126,5 @@ class USPSTrackingCodeField(CharField):
             # and not one of those
             if self.is_USS128(tracking_code=value) is False:
                 # then its not a USPS tracking code I'm afraid
-                raise InvalidTrackingNumber
+                raise InvalidTrackingNumber(self.original)
         return value
