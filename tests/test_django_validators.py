@@ -14,12 +14,15 @@ class BaseTrackingCode(unittest.TestCase):
     def test_is_valid(self):
         if self.subject is not None:
             subject = self.subject()
-            subject.clean(value=self.value)
+            # loop over test vals
+            values = self.value if type(self.value) in [list, tuple] else [self.value]
+            for value in values:
+                subject.clean(value=value)
 
 
 class Django_USS128_TrackingCodeTest(BaseTrackingCode):
     subject = USPSTrackingCodeField
-    value = '70132630000013657033'
+    value = ['7013 2630 0001 1944 7323', '70132630000013657033']
 
     def test_invalid(self):
         value = 'this_is_wrong'
